@@ -1,0 +1,122 @@
+---
+title: "ecommerce"
+author: "Xindong Zhou"
+date: "2/8/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+library(tidyverse)
+library(tidytext)
+library(forcats)
+library(scales)
+library(readr)
+
+ecommerce <- read_csv("mgt495-working-with-unstructured-course-project/Womens Clothing E-Commerce Reviews.csv")
+
+colnames(ecommerce) <- c('X1', 'ClothingId', "Age", "Title", "Review", "Rating", "RecommendedInd", "PositiveFeedbackCount", "DivisionName", "DepartmentName", "ClassName")
+```
+
+
+```{r}
+tidy_ecommerce <- ecommerce %>%
+  unnest_tokens(word, Review)
+
+sentiment <- tidy_ecommerce %>%
+  group_by(X1, word) %>%
+  summarise(freq = n(), clothing = mean(ClothingId), rating = mean(Rating), recom = mean(RecommendedInd))
+
+sentiment <- sentiment %>%
+  anti_join(stop_words)
+
+sentiment_freq <- sentiment %>%
+  group_by(word) %>%
+  summarise(frequency = n())
+  
+sentiment <- sentiment %>%
+  inner_join(sentiment_freq, by = 'word') %>%
+  filter(frequency >= 20)
+```
+↑ Prepare and clean data. For each purchase, only leave review words that are meaningful and appear more than 20 times in the whole dataset.
+
+```{r}
+sentiment_total <- sentiment %>%
+  group_by(word) %>%
+  summarise(frequency = n(), rating = mean(rating), recom = mean(recom)) %>%
+  mutate(recommend = ifelse(recom >= 0.5, 'yes', 'no'))
+
+sentiment_total %>%
+  top_n(1, recom) %>%
+  ggplot(aes(fct_reorder(word, recom), recom)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = 'Words that most likely appear with a confirmative recommendation', y = 'Likelyhood')
+
+sum(sentiment_total$recom == 1)
+```
+↑ Calculate words' average recom which represents words' possiblity of appearing with a confirmative recommendation. Use 0.5 as threshold of deciding whether the word appears with a conf recom. There are 43 words that only appear with a conf recom.
+
+```{r}
+sentiment_recom_count <- sentiment_total %>%
+  group_by(recom) %>%
+  summarise(number = n())
+  
+sentiment_recom_count$recom <- as.factor(sentiment_recom_count$recom)
+
+sentiment_recom_count %>%
+  top_n(10, number) %>%
+  ggplot(aes(fct_reorder(recom, number), number)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = 'Possibility that words appear with a confirmative recommendation', y = 'Number of words appearing with this possibility')
+```
+↑ Try to measure by number of words grouped by portion. As shown, portions of 0.8-0.89 take most positions in top 10 frequency, meaning a lot of words are 80%+ likely to appear with a conf recom.
+
+```{r}
+sentiment_norecom <- sentiment %>%
+  filter(recom == 0) %>%
+  group_by(word) %>%
+  summarise(freq = n(), frequency = mean(frequency), portion = freq / frequency)
+
+sentiment_norecom %>%
+  top_n(20, portion) %>%
+  ggplot(aes(fct_reorder(word, portion), portion)) +
+  geom_col() +
+  coord_flip() +
+  labs(x = 'Words that most likely appear with a not recommendation', y = 'Likelyhood')
+```
+↑ Show words that are most likely appear with a 'not recommend'. Contrary to conf recom, there is no word that only appears with a 'not recommend'.
+
+```{r}
+library(wordcloud)
+sentiment_norecom_top <- sentiment_norecom %>%
+  top_n(40, portion)
+wordcloud(sentiment_norecom_top$word, sentiment_norecom_top$portion, scale = c(2, 0.3), colors = brewer.pal(8,"Dark2"))
+```
+↑ Show wordcloud of top 40 words that appear most likely with a 'not recommend'.
+
+```{r}
+sentiment_total2 <- sentiment_total %>%
+  arrange(desc(frequency)) %>%
+  top_n(20, frequency) %>%
+  mutate(n_rec = frequency * recom, n_norec = frequency * (1-recom))
+
+sentiment_total3 <- sentiment_total2 %>%
+  left_join(sentiment, by = 'word') %>%
+  mutate(recom = ifelse(rating.y >= 3, 'Recommend', 'Not recommend'))
+
+ggplot(sentiment_total3, aes(x = word, fill = recom)) +
+  geom_bar(position = "dodge") +
+  labs(x = 'Words with highest frequency', y = 'Number of appearance')
+```
+↑ Brilliant chart for 20 words of highest frequency to be shown by rating distributions.
