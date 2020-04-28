@@ -1,0 +1,769 @@
+---
+title: "topic modelling"
+author: "yamini"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+install.packages(c("LDAvis", "textstem"))
+```
+
+
+```{r}
+# loading required libraries
+library(tidyverse)
+library(topicmodels)
+library(tidytext)
+library(SnowballC)
+library(LDAvis)
+library(textstem)
+library(scales)
+```
+
+```{r}
+# loading data
+
+data <-  read_csv("Womens Clothing E-Commerce Reviews.csv")
+```
+
+
+```{r}
+## basic summary-data
+head(data)
+```
+
+
+
+```{r}
+## get text into tidy format, replace a few special words and remove stop words
+reviewsTidy <- data %>%
+  select(X1,`Review Text`) %>%
+  unnest_tokens(word, `Review Text`) %>%
+  anti_join(stop_words)
+```
+
+```{r}
+## get raw word frequencies
+wordCount <- reviewsTidy %>%
+  count(word,sort = TRUE)
+```
+
+
+
+```{r}
+## remove common words and lemmatize remaining
+commonWords <- c('dress','top')
+
+reviewsTidy <- reviewsTidy %>%
+  mutate(lemma = lemmatize_words(word))
+
+wordCount <- reviewsTidy %>%
+  count(lemma,sort = TRUE)
+```
+
+
+
+```{r}
+## remove infrequent words & common  words
+freqLimit <- 20
+vocab <- wordCount %>%
+  filter(n >= freqLimit)
+
+reviewsTidy <- reviewsTidy %>%
+  filter(lemma %in% vocab$lemma) %>%
+  filter(!lemma %in% commonWords)
+```
+
+
+```{r}
+## remove very short reviews
+
+reviewLength <- reviewsTidy %>%
+  count(X1)
+
+
+minLength <- 30
+
+reviewLength <- reviewLength %>%
+  filter(n >= minLength)
+```
+
+```{r}
+## create document term matrix for use in LDA 
+
+dtmUni <- reviewsTidy %>%
+  filter(X1 %in% reviewLength$X1) %>%
+  count(X1,lemma) %>%
+  cast_dtm(X1, lemma, n)
+```
+
+```{r}
+## @knitr RunLDA
+
+numTopics <- c(10,20,30,40)
+
+
+for (theNum in c(1:length(numTopics))){
+  theLDA <- LDA(dtmUni, k = numTopics[theNum], method="Gibbs",
+                control = list(alpha = 1/numTopics[theNum],iter=5000,burnin=10000,seed = 1234))
+  
+  saveRDS(theLDA,file=paste0('tm_ecommerce',numTopics[theNum],'.rds'))
+}
+
+```
+
+```{r}
+## @knitr AnalyzeTopicsUniBi
+
+theNumTopics <- 20
+theLDA <- read_rds(paste0('tm_ecommerce',theNumTopics,'.rds'))
+
+theTopicsBeta <- tidy(theLDA, matrix = "beta")
+
+TopicsTop <- theTopicsBeta %>%
+  group_by(topic) %>%
+  top_n(15, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta) %>%
+  ungroup() %>%
+  mutate(x = n():1)  # for plotting
+
+plTopicWeights <- TopicsTop %>%
+  mutate(topic=factor(topic)) %>%
+  ggplot(aes(x=x,y=beta,fill=topic)) + 
+  geom_bar(stat='identity',show.legend = F) + 
+  coord_flip() + 
+  facet_wrap(~topic,scales='free') +
+  scale_x_continuous(breaks = TopicsTop$x,
+                     labels = TopicsTop$term,
+                     expand = c(0,0)) + 
+  labs(title='Topic Model with both Unigrams and Bigrams',
+       subtitle = paste0(theNumTopics,' Topic LDA of '
+                  , ' Ecommerce clothing Reviews'),
+       x = 'word',
+       y = 'beta')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=5),
+        axis.text.y = element_text(size = 6))
+```
+
+```{r}
+plTopicWeights
+```
+
+
+## topic modelling by department
+# tops
+```{r}
+## get text into tidy format, replace a few special words and remove stop words
+reviewsTidy_tops <- data %>%
+  filter(`Department Name`== "Tops")%>%
+  select(X1,`Review Text`) %>%
+  unnest_tokens(word, `Review Text`) %>%
+  anti_join(stop_words)
+```
+
+
+```{r}
+## get raw word frequencies
+wordCount <-reviewsTidy_tops %>%
+  count(word,sort = TRUE)
+```
+
+
+
+```{r}
+## d lemmatize remaining
+
+reviewsTidy_tops <- reviewsTidy_tops %>%
+  mutate(lemma = lemmatize_words(word))
+
+wordCount <- reviewsTidy_tops %>%
+  count(lemma,sort = TRUE)
+```
+
+
+```{r}
+## remove infrequent words & common  words
+
+freqLimit <- 20
+vocab <- wordCount %>%
+  filter(n >= freqLimit)
+
+commonWords <- c('dress','top')
+
+reviewsTidy_tops <- reviewsTidy_tops%>%
+  filter(lemma %in% vocab$lemma) %>%
+  filter(!lemma %in% commonWords)
+
+```
+
+
+```{r}
+## remove very short reviews
+
+reviewLength <- reviewsTidy_tops %>%
+  count(X1)
+
+
+minLength <- 30
+
+reviewLength <- reviewLength %>%
+  filter(n >= minLength)
+```
+
+
+```{r}
+## create document term matrix for use in LDA 
+
+dtmUni <- reviewsTidy_tops %>%
+  filter(X1 %in% reviewLength$X1) %>%
+  count(X1,lemma) %>%
+  cast_dtm(X1, lemma, n)
+```
+
+
+```{r}
+## @knitr RunLDA
+
+numTopics <- c(5,10,20,30)
+
+
+for (theNum in c(1:length(numTopics))){
+  theLDA <- LDA(dtmUni, k = numTopics[theNum], method="Gibbs",
+                control = list(alpha = 1/numTopics[theNum],iter=5000,burnin=10000,seed = 1234))
+  
+  saveRDS(theLDA,file=paste0('tm_ecommerce_tops',numTopics[theNum],'.rds'))
+}
+  
+  
+```
+
+
+```{r}
+## @knitr AnalyzeTopicsUniBi
+
+theNumTopics <- 10
+theLDA <- read_rds(paste0('tm_ecommerce_tops',theNumTopics,'.rds'))
+
+theTopicsBeta <- tidy(theLDA, matrix = "beta")
+
+TopicsTop <- theTopicsBeta %>%
+  group_by(topic) %>%
+  top_n(15, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta) %>%
+  ungroup() %>%
+  mutate(x = n():1)  # for plotting
+
+plTopicWeights_tops <- TopicsTop %>%
+  mutate(topic=factor(topic)) %>%
+  ggplot(aes(x=x,y=beta,fill=topic)) + 
+  geom_bar(stat='identity',show.legend = F) + 
+  coord_flip() + 
+  facet_wrap(~topic,scales='free') +
+  scale_x_continuous(breaks = TopicsTop$x,
+                     labels = TopicsTop$term,
+                     expand = c(0,0)) + 
+  labs(title='Topic Model with Unigrams for TOPS category ',
+       subtitle = paste0(theNumTopics,' Topic LDA of '
+                  , ' Ecommerce clothing Reviews'),
+       x = 'word',
+       y = 'beta')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=5),
+        axis.text.y = element_text(size = 6))
+
+```
+
+```{r}
+plTopicWeights_tops
+```
+
+# bottoms category
+
+```{r}
+## get text into tidy format, replace a few special words and remove stop words
+reviewsTidy_bottoms <- data %>%
+  filter(`Department Name`== "Bottoms")%>%
+  select(X1,`Review Text`) %>%
+  unnest_tokens(word, `Review Text`) %>%
+  anti_join(stop_words)
+```
+
+```{r}
+## get raw word frequencies
+wordCount <-reviewsTidy_bottoms  %>%
+  count(word,sort = TRUE)
+```
+
+```{r}
+## d lemmatize remaining
+
+reviewsTidy_bottoms  <- reviewsTidy_bottoms  %>%
+  mutate(lemma = lemmatize_words(word))
+
+wordCount <- reviewsTidy_bottoms  %>%
+  count(lemma,sort = TRUE)
+```
+
+```{r}
+## remove infrequent words & common  words
+
+freqLimit <- 20
+vocab <- wordCount %>%
+  filter(n >= freqLimit)
+
+reviewsTidy_bottoms  <- reviewsTidy_bottoms %>%
+  filter(lemma %in% vocab$lemma) 
+
+```
+
+```{r}
+## remove very short reviews
+
+reviewLength <- reviewsTidy_bottoms  %>%
+  count(X1)
+
+
+minLength <- 30
+
+reviewLength <- reviewLength %>%
+  filter(n >= minLength)
+```
+
+```{r}
+## create document term matrix for use in LDA 
+
+dtmUni <- reviewsTidy_bottoms  %>%
+  filter(X1 %in% reviewLength$X1) %>%
+  count(X1,lemma) %>%
+  cast_dtm(X1, lemma, n)
+```
+
+```{r}
+## @knitr RunLDA
+
+numTopics <- c(5,10,20,30)
+
+
+for (theNum in c(1:length(numTopics))){
+  theLDA <- LDA(dtmUni, k = numTopics[theNum], method="Gibbs",
+                control = list(alpha = 1/numTopics[theNum],iter=5000,burnin=10000,seed = 1234))
+  
+  saveRDS(theLDA,file=paste0('tm_ecommerce_bottoms',numTopics[theNum],'.rds'))
+}
+```
+
+```{r}
+## @knitr AnalyzeTopicsUniBi
+
+theNumTopics <- 5
+theLDA <- read_rds(paste0('tm_ecommerce_bottoms',theNumTopics,'.rds'))
+
+theTopicsBeta <- tidy(theLDA, matrix = "beta")
+
+TopicsTop <- theTopicsBeta %>%
+  group_by(topic) %>%
+  top_n(15, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta) %>%
+  ungroup() %>%
+  mutate(x = n():1)  # for plotting
+
+plTopicWeights_bottoms <- TopicsTop %>%
+  mutate(topic=factor(topic)) %>%
+  ggplot(aes(x=x,y=beta,fill=topic)) + 
+  geom_bar(stat='identity',show.legend = F) + 
+  coord_flip() + 
+  facet_wrap(~topic,scales='free') +
+  scale_x_continuous(breaks = TopicsTop$x,
+                     labels = TopicsTop$term,
+                     expand = c(0,0)) + 
+  labs(title='Topic Model with Unigrams for bottoms category ',
+       subtitle = paste0(theNumTopics,' Topic LDA of '
+                  , ' Ecommerce clothing Reviews'),
+       x = 'word',
+       y = 'beta')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=5),
+        axis.text.y = element_text(size = 6))
+
+```
+
+```{r}
+plTopicWeights_bottoms
+```
+
+# intimate category
+
+
+```{r}
+## get text into tidy format, replace a few special words and remove stop words
+reviewsTidy_intimate <- data %>%
+  filter(`Department Name`== "Intimate")%>%
+  select(X1,`Review Text`) %>%
+  unnest_tokens(word, `Review Text`) %>%
+  anti_join(stop_words)
+```
+
+```{r}
+## get raw word frequencies
+wordCount <-reviewsTidy_intimate  %>%
+  count(word,sort = TRUE)
+```
+
+```{r}
+## d lemmatize remaining
+
+reviewsTidy_intimate  <- reviewsTidy_intimate  %>%
+  mutate(lemma = lemmatize_words(word))
+
+wordCount <- reviewsTidy_intimate  %>%
+  count(lemma,sort = TRUE)
+```
+
+```{r}
+## remove infrequent words & common  words
+
+freqLimit <- 20
+vocab <- wordCount %>%
+  filter(n >= freqLimit)
+
+reviewsTidy_intimate  <- reviewsTidy_intimate%>%
+  filter(lemma %in% vocab$lemma) 
+
+```
+
+```{r}
+## remove very short reviews
+
+reviewLength <- reviewsTidy_intimate  %>%
+  count(X1)
+
+
+minLength <- 30
+
+reviewLength <- reviewLength %>%
+  filter(n >= minLength)
+```
+
+```{r}
+## create document term matrix for use in LDA 
+
+dtmUni <- reviewsTidy_intimate  %>%
+  filter(X1 %in% reviewLength$X1) %>%
+  count(X1,lemma) %>%
+  cast_dtm(X1, lemma, n)
+```
+
+```{r}
+## @knitr RunLDA
+
+numTopics <- c(5,10,20,30)
+
+
+for (theNum in c(1:length(numTopics))){
+  theLDA <- LDA(dtmUni, k = numTopics[theNum], method="Gibbs",
+                control = list(alpha = 1/numTopics[theNum],iter=5000,burnin=10000,seed = 1234))
+  
+  saveRDS(theLDA,file=paste0('tm_ecommerce_intimate',numTopics[theNum],'.rds'))
+}
+```
+
+```{r}
+## @knitr AnalyzeTopicsUniBi
+
+theNumTopics <- 5
+theLDA <- read_rds(paste0('tm_ecommerce_intimate',theNumTopics,'.rds'))
+
+theTopicsBeta <- tidy(theLDA, matrix = "beta")
+
+TopicsTop <- theTopicsBeta %>%
+  group_by(topic) %>%
+  top_n(15, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta) %>%
+  ungroup() %>%
+  mutate(x = n():1)  # for plotting
+
+plTopicWeights_intimate <- TopicsTop %>%
+  mutate(topic=factor(topic)) %>%
+  ggplot(aes(x=x,y=beta,fill=topic)) + 
+  geom_bar(stat='identity',show.legend = F) + 
+  coord_flip() + 
+  facet_wrap(~topic,scales='free') +
+  scale_x_continuous(breaks = TopicsTop$x,
+                     labels = TopicsTop$term,
+                     expand = c(0,0)) + 
+  labs(title='Topic Model with Unigrams for intimate category ',
+       subtitle = paste0(theNumTopics,' Topic LDA of '
+                  , ' Ecommerce clothing Reviews'),
+       x = 'word',
+       y = 'beta')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=5),
+        axis.text.y = element_text(size = 6))
+
+```
+
+```{r}
+plTopicWeights_intimate
+```
+
+# dresses category
+
+
+```{r}
+## get text into tidy format, replace a few special words and remove stop words
+reviewsTidy_dresses <- data %>%
+  filter(`Department Name`== "Dresses")%>%
+  select(X1,`Review Text`) %>%
+  unnest_tokens(word, `Review Text`) %>%
+  anti_join(stop_words)
+```
+
+```{r}
+## get raw word frequencies
+wordCount <-reviewsTidy_dresses  %>%
+  count(word,sort = TRUE)
+```
+
+```{r}
+## d lemmatize remaining
+
+reviewsTidy_dresses  <- reviewsTidy_dresses %>%
+  mutate(lemma = lemmatize_words(word))
+
+wordCount <- reviewsTidy_dresses  %>%
+  count(lemma,sort = TRUE)
+```
+
+```{r}
+## remove infrequent words & common  words
+
+freqLimit <- 20
+vocab <- wordCount %>%
+  filter(n >= freqLimit)
+commonWords <- c('dress','top')
+
+
+reviewsTidy_dresses  <- reviewsTidy_dresses%>%
+  filter(lemma %in% vocab$lemma) %>%
+  filter(!lemma %in% commonWords)
+
+```
+
+```{r}
+## remove very short reviews
+
+reviewLength <- reviewsTidy_dresses  %>%
+  count(X1)
+
+
+minLength <- 30
+
+reviewLength <- reviewLength %>%
+  filter(n >= minLength)
+```
+
+```{r}
+## create document term matrix for use in LDA 
+
+dtmUni <- reviewsTidy_dresses  %>%
+  filter(X1 %in% reviewLength$X1) %>%
+  count(X1,lemma) %>%
+  cast_dtm(X1, lemma, n)
+```
+
+```{r}
+## @knitr RunLDA
+
+numTopics <- c(5,10,20,30)
+
+
+for (theNum in c(1:length(numTopics))){
+  theLDA <- LDA(dtmUni, k = numTopics[theNum], method="Gibbs",
+                control = list(alpha = 1/numTopics[theNum],iter=5000,burnin=10000,seed = 1234))
+  
+  saveRDS(theLDA,file=paste0('tm_ecommerce_dresses',numTopics[theNum],'.rds'))
+}
+```
+
+```{r}
+## @knitr AnalyzeTopicsUniBi
+
+theNumTopics <- 5
+theLDA <- read_rds(paste0('tm_ecommerce_dresses',theNumTopics,'.rds'))
+
+theTopicsBeta <- tidy(theLDA, matrix = "beta")
+
+TopicsTop <- theTopicsBeta %>%
+  group_by(topic) %>%
+  top_n(15, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta) %>%
+  ungroup() %>%
+  mutate(x = n():1)  # for plotting
+
+plTopicWeights_dresses <- TopicsTop %>%
+  mutate(topic=factor(topic)) %>%
+  ggplot(aes(x=x,y=beta,fill=topic)) + 
+  geom_bar(stat='identity',show.legend = F) + 
+  coord_flip() + 
+  facet_wrap(~topic,scales='free') +
+  scale_x_continuous(breaks = TopicsTop$x,
+                     labels = TopicsTop$term,
+                     expand = c(0,0)) + 
+  labs(title='Topic Model with Unigrams for Dresses category ',
+       subtitle = paste0(theNumTopics,' Topic LDA of '
+                  , ' Ecommerce clothing Reviews'),
+       x = 'word',
+       y = 'beta')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=5,face="bold"),
+        axis.text.y = element_text(size = 6,face="bold"),axis.title=element_text(size=12,face="bold"),
+       panel.background = element_rect(fill = "transparent"), 
+       plot.background = element_rect(fill = "transparent", color = NA), 
+       panel.grid.major = element_blank(), # get rid of major grid
+       panel.grid.minor = element_blank(), # get rid of minor grid
+       legend.background = element_rect(fill = "transparent"), # get rid of legend bg
+       legend.box.background = element_rect(fill = "transparent"))
+
+```
+
+```{r}
+plTopicWeights_dresses
+```
+
+```{r}
+ggsave("plTopicWeights_dresses.png", plTopicWeights_dresses, bg = "transparent")
+```
+
+
+
+## jackets
+
+
+```{r}
+## get text into tidy format, replace a few special words and remove stop words
+reviewsTidy_jackets <- data %>%
+  filter(`Department Name`== "Jackets")%>%
+  select(X1,`Review Text`) %>%
+  unnest_tokens(word, `Review Text`) %>%
+  anti_join(stop_words)
+```
+
+```{r}
+## get raw word frequencies
+wordCount <-reviewsTidy_jackets  %>%
+  count(word,sort = TRUE)
+```
+
+```{r}
+## d lemmatize remaining
+
+reviewsTidy_jackets  <- reviewsTidy_jackets  %>%
+  mutate(lemma = lemmatize_words(word))
+
+wordCount <- reviewsTidy_jackets  %>%
+  count(lemma,sort = TRUE)
+```
+
+```{r}
+## remove infrequent words & common  words
+
+freqLimit <- 20
+vocab <- wordCount %>%
+  filter(n >= freqLimit)
+
+reviewsTidy_jackets  <- reviewsTidy_jackets %>%
+  filter(lemma %in% vocab$lemma) 
+
+```
+
+```{r}
+## remove very short reviews
+
+reviewLength <- reviewsTidy_jackets  %>%
+  count(X1)
+
+
+minLength <- 30
+
+reviewLength <- reviewLength %>%
+  filter(n >= minLength)
+```
+
+```{r}
+## create document term matrix for use in LDA 
+
+dtmUni <- reviewsTidy_jackets  %>%
+  filter(X1 %in% reviewLength$X1) %>%
+  count(X1,lemma) %>%
+  cast_dtm(X1, lemma, n)
+```
+
+```{r}
+## @knitr RunLDA
+
+numTopics <- c(5,10,20,30)
+
+
+for (theNum in c(1:length(numTopics))){
+  theLDA <- LDA(dtmUni, k = numTopics[theNum], method="Gibbs",
+                control = list(alpha = 1/numTopics[theNum],iter=5000,burnin=10000,seed = 1234))
+  
+  saveRDS(theLDA,file=paste0('tm_ecommerce_jackets',numTopics[theNum],'.rds'))
+}
+```
+
+```{r}
+## @knitr AnalyzeTopicsUniBi
+
+theNumTopics <- 5
+theLDA <- read_rds(paste0('tm_ecommerce_jackets',theNumTopics,'.rds'))
+
+theTopicsBeta <- tidy(theLDA, matrix = "beta")
+
+TopicsTop <- theTopicsBeta %>%
+  group_by(topic) %>%
+  top_n(15, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta) %>%
+  ungroup() %>%
+  mutate(x = n():1)  # for plotting
+
+plTopicWeights_jackets <- TopicsTop %>%
+  mutate(topic=factor(topic)) %>%
+  ggplot(aes(x=x,y=beta,fill=topic)) + 
+  geom_bar(stat='identity',show.legend = F) + 
+  coord_flip() + 
+  facet_wrap(~topic,scales='free') +
+  scale_x_continuous(breaks = TopicsTop$x,
+                     labels = TopicsTop$term,
+                     expand = c(0,0)) + 
+  labs(title='Topic Model with Unigrams for Jackets category ',
+       subtitle = paste0(theNumTopics,' Topic LDA of '
+                  , ' Ecommerce clothing Reviews'),
+       x = 'word',
+       y = 'beta')+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=5,face="bold"),
+        axis.text.y = element_text(size = 6,face="bold"),
+       axis.title=element_text(size=12,face="bold") ,
+       panel.background = element_rect(fill = "transparent"),
+       plot.background = element_rect(fill = "transparent", color = NA),
+       panel.grid.major = element_blank(), # get rid of major grid
+       panel.grid.minor = element_blank(), # get rid of minor grid
+       legend.background = element_rect(fill = "transparent"), # get rid of legend bg
+       legend.box.background = element_rect(fill = "transparent"))
+
+
+
+```
+
+```{r}
+plTopicWeights_jackets
+```
+```{r}
+ggsave("plTopicWeights_jackets.png", plTopicWeights_jackets, bg = "transparent")
+```
+
+
